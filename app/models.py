@@ -4,6 +4,7 @@ import glob
 import os
 import sys
 from django.db import models
+from django.db.models import Q, Sum
 from polymorphic.models import PolymorphicModel
 
 
@@ -225,16 +226,54 @@ class Driver(User):
     partner_id = modeles.ForeignKey('Partner', unique=True, null=True)
     vehicle_id = modeles.ForeignKey('Vehicle', unique=True, null=True)
 
-    def get_driver_external_id(self, vendor:str) -> str:
-        if Fleets_drivers_vehicles_rate.objects.filter(fleet__name=vendor, driver=self, deleted_at=None).exists():
-            driver_external_id = Fleets_drivers_vehicles_rate.objects.get(fleet__name=vendor, driver=self, deleted_at=None).driver_external_id
-        return driver_external_id
-    
-    def get_rate(self, verndor_rate:str) -> float:
-        vendor = verndor_rate.vendor().capitalize()
-        if Fleets_drivers_vehicles_rate.objects.filter(fleet__name=vendor, driver=self, deleted_at=None).exists():
-            rate = float(Fleets_drivers_vehicles_rate.objects.get(fleet__name=vendor, driver=self, deleted_at=None).rate)
-        return rate
+    def get_driver_external_id(self, vendor: str) -> str:
+        try:
+            return Fleets_drivers_vehicles_rate.objects.get(fleet__name=vendor, driver=self, deleted_at=None).driver_external_id
+        except Fleets_drivers_vehicles_rate.DoesNotExist:
+            return ''
+
+    def get_rate(self, vendor: str) -> float:
+        try:
+            return float(Fleets_drivers_vehicles_rate.objects.get(fleet__name=vendor.capitalize(), driver=self, deleted_at=None).rate)
+        except Fleets_drivers_vehicles_rate.DoesNotExist:
+            return 0
+
+    def get_kassa(self, vendor: str, week_number: [str, None] = None) -> float:
+        vendor = vendor.capitalize()
+        driver_external_id = self.get_driver_external_id(vendor)
+        fleets = {
+            'Uber': {'model': UberPaymentsOrder, 'condition': Q(driver_uuid=driver_external_id)},
+            'Bolt': {'model': BoltPaymentsOrder, 'condition': Q(mobile_number=driver_external_id)},
+            'Uklon': {'model': UklonPaymentsOrder, 'condition': Q(signal=driver_external_id)},
+        }
+        if fleets.get(vendor) is None:
+            return 0
+        st = SeleniumTools(session='', week_number=week_number)
+        qset = fleets[vendor]['model'].objects.filter(fleets[vendor]['condition'],
+                                                      report_from__lte=st.end_of_week(),
+                                                      report_to__gte=st.start_of_week())
+        return sum(map(lambda x: x.kassa(), qset))
+
+    def get_dynamic_rate(self, vendor: str, week_number: [str, None] = None, kassa: float = None) -> float:
+        vendor = vendor.capitalize()
+        if kassa is None:
+            kassa = self.get_kassa(vendor, week_number)
+        dct = DriverRateLevels.objects.filter(fleet__name=vendor, threshold_value__gte=kassa,
+                                              deleted_at=None).aggregate(Sum('rate_delta'))
+        rate = self.get_rate(vendor) + float(dct['rate_delta__sum'] if dct['rate_delta__sum'] is not None else 0)
+        return max(rate, 0)
+
+    def get_salary(self, vendor: str, week_number: [str, None] = None) -> float:
+        vendor = vendor.capitalize()
+        try:
+            min_fee = float(Fleet.objects.get(name=vendor).min_fee)
+        except Fleet.DoesNotExist:
+            min_fee = 0
+        kassa = self.get_kassa(vendor, week_number)
+        rate = self.get_dynamic_rate(vendor, week_number, kassa)
+        salary = kassa * rate
+        print(kassa, rate, salary, min(salary, max(kassa - min_fee, 0)))
+        return min(salary, max(kassa - min_fee, 0))
 
     def __str__(self) -> str:
         return f'{self.full_name}'
@@ -245,6 +284,7 @@ class Fleet(PolymorphicModel):
     created_at = models.DateTimeField(editable=False, auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    min_fee = models.DecimalField(decimal_places=2, max_digits=15, default=0)
 
     def __str__(self) -> str:
         return f'{self.name}'
@@ -323,6 +363,16 @@ class Fleets_drivers_vehicles_rate(models.Model):
 
     def __str__(self) -> str:
         return f'{self.driver.full_name} {self.fleet.name} {int(self.rate * 100)}%'
+
+
+class DriverRateLevels(models.Model):
+    fleet = models.ForeignKey(Fleet, on_delete=models.CASCADE)
+    threshold_value = models.DecimalField(decimal_places=2, max_digits=15, default=0)
+    rate_delta = models.DecimalField(decimal_places=2, max_digits=3, default=0)
+    created_at = models.DateTimeField(editable=False, auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
 
 class WeeklyReportFile(models.Model):
     organization_name = models.CharField(max_length=20)
