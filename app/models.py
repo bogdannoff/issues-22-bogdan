@@ -181,7 +181,7 @@ class User(models.Model):
     chat_id = models.CharField(blank=True, max_length=9)
     created_at = models.DateTimeField(editable=False, auto_now=datetime.datetime.now())
     updated_at = models.DateTimeField(auto_now=True)
-    deleted_at = models.DateTimeField(blank=True, editable=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, editable=True)
 
     def __str__(self) -> str:
         return f'{self.name} {self.second_name}'
@@ -273,7 +273,7 @@ class Driver(User):
         return min(salary, max(kassa - min_fee, 0))
 
     def __str__(self) -> str:
-        return f'{self.name} {self.second_name}: {self.fleet.name}'
+        return f'{self.name} {self.second_name}'
 
     @staticmethod
     def save_driver_status(status):
@@ -373,7 +373,7 @@ class Fleets_drivers_vehicles_rate(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
-        return f'{self.driver.full_name} {self.fleet.name} {int(self.rate * 100)}%'
+        return f'{self.driver.name} {self.fleet.name} {int(self.rate * 100)}%'
 
 
 class DriverRateLevels(models.Model):
