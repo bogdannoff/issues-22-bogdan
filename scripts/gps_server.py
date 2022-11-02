@@ -6,14 +6,14 @@ from app.models import RawGPS
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
 from socket import * 
-from threading import Thread
-from time import sleep
 
-
-UDP_IP = "fly-global-services"
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+UDP_IP = os.environ['UDP_IP']
 UDP_PORT = 44300
-TCP_IP = "0.0.0.0"
+TCP_IP = os.environ['UDP_IP']
 TCP_PORT = 44300
 
 
@@ -70,7 +70,8 @@ class PackageHandler:
             return self.answer_bad_data
 
 
-def tcp_function():
+
+def run():
     with socket(AF_INET, SOCK_STREAM) as serv_sock:
         serv_sock.bind((TCP_IP, TCP_PORT))
         serv_sock.listen()
@@ -93,17 +94,3 @@ def tcp_function():
                         logging.info(msg=f"Client suddenly closed, cannot send")
                         break
                 logging.info(msg=f"Disconnected by {addr}")
-
-def run():
-    thread = Thread(target = tcp_function)
-    thread.start()
-
-    sockfd = socket(AF_INET, SOCK_DGRAM)
-    sockfd.bind((UDP_IP, UDP_PORT))
-    logging.info(msg="Hello UDP on Fly.io!")
-    while True:
-        data, client_addr = sockfd.recvfrom(1024)
-        message = "UDP OK"
-        logging.info(msg=data)
-        logging.info(msg=message)
-        sockfd.sendto(message.encode(), client_addr)
