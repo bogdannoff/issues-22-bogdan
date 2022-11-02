@@ -385,6 +385,28 @@ class DriverRateLevels(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
 
 
+class RawGPS(models.Model):
+    imei = models.CharField(max_length=100)
+    client_ip = models.CharField(max_length=100)
+    client_port = models.IntegerField()
+    data = models.CharField(max_length=1024)
+    created_at = models.DateTimeField(editable=False, auto_now_add=True)
+
+
+class GPS(models.Model):
+    date_time = models.DateTimeField(null=False)
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    lat = models.DecimalField(decimal_places=4, max_digits=10, default=0)
+    lat_zone = models.CharField(max_length=1)
+    lon = models.DecimalField(decimal_places=4, max_digits=10, default=0)
+    lon_zone = models.CharField(max_length=1)
+    speed = models.IntegerField(default=0)
+    course = models.IntegerField(default=0)
+    height = models.IntegerField(default=0)
+    raw_data = models.OneToOneField(RawGPS, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(editable=False, auto_now_add=True)
+
+
 class WeeklyReportFile(models.Model):
     organization_name = models.CharField(max_length=20)
     report_file_name = models.CharField(max_length=255, unique=True)
