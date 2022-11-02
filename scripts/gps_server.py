@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 
 from app.models import RawGPS
@@ -11,8 +12,8 @@ from socket import *
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-UDP_IP = os.environ['UDP_IP']
-UDP_PORT = 44300
+# UDP_IP = os.environ['UDP_IP']
+# UDP_PORT = 44300
 TCP_IP = os.environ['UDP_IP']
 TCP_PORT = 44300
 

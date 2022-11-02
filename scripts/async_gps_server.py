@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 
 from asgiref.sync import sync_to_async
@@ -10,7 +11,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-HOST, PORT = "localhost", 44300
+HOST, PORT = os.environ['UDP_IP'], 44300
 
 
 class PackageHandler:
