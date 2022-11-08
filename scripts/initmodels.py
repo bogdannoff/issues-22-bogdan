@@ -1,12 +1,13 @@
 
-from app.models import Driver, Vehicle, Fleets_drivers_vehicles_rate, BoltFleet, UberFleet, UklonFleet, NewUklonFleet
+from app.models import Driver, Vehicle, Fleets_drivers_vehicles_rate, BoltFleet, UberFleet, UklonFleet, NewUklonFleet, \
+    DriverRateLevels
 
 DRIVERS_MAP = {
     'fleets': [
-        {'name': 'Uber', 'model': UberFleet},
-        {'name': 'Bolt', 'model': BoltFleet},
-        {'name': 'Uklon', 'model': UklonFleet},
-        {'name': 'NewUklon', 'model': NewUklonFleet},
+        {'name': 'Uber', 'model': UberFleet, 'min_fee': 3000},
+        {'name': 'Bolt', 'model': BoltFleet, 'min_fee': 4000},
+        {'name': 'Uklon', 'model': UklonFleet, 'min_fee': 5000},
+        {'name': 'NewUklon', 'model': NewUklonFleet, 'min_fee': 6000},
     ],
     'drivers': [
         {

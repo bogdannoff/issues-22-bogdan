@@ -4,7 +4,8 @@ import glob
 import os
 import sys
 from django.db import models
-from django.db.models import Q, Sum
+from django.db.models import Sum, QuerySet
+from django.db.models.base import ModelBase
 from polymorphic.models import PolymorphicModel
 
 
@@ -33,7 +34,52 @@ class PaymentsOrder(models.Model):
     cancel_payment = models.DecimalField(decimal_places=2, max_digits=10)
 
 
-class UklonPaymentsOrder(models.Model):
+class GenericPaymentsOrder(ModelBase):
+
+    _registry = {}
+
+    def __new__(cls, name, bases, attrs):
+
+        if attrs.get('vendor_name') is None:
+            raise NotImplementedError(f'vendor_name must be implemented in {name}')
+        try:
+            if not callable(getattr(attrs.get('Scopes'), 'filter_by_driver_external_id')):
+                raise NotImplementedError(f'{name}.Scopes.filter_by_driver_external_id() must be callable')
+        except AttributeError:
+            raise NotImplementedError(f'{name}.Scopes.filter_by_driver_external_id() must be implemented')
+
+        scopes_bases = filter(None, [attrs.get('Scopes')] +
+                              [getattr(b, 'Scopes', None) for b in bases])
+
+        attrs['Scopes'] = type('ScopesFor' + name, tuple(scopes_bases), {})
+
+        ScopedQuerySet = type('ScopedQuerySetFor' + name, (QuerySet, attrs['Scopes']), {})
+        ScopedManager = type('ScopedManagerFor' + name, (models.Manager, attrs['Scopes']), {
+            'use_for_related_fields': True,
+            'get_query_set': lambda self: ScopedQuerySet(self.model, using=self._db)
+        })
+
+        attrs['objects'] = ScopedManager()
+
+        vendor_name_ = attrs.get('vendor_name')
+        if vendor_name_ in cls._registry:
+            raise ValueError(f'{vendor_name_} is already registered for {name}')
+
+        new_cls = ModelBase.__new__(cls, name, bases, attrs)
+        cls._registry[vendor_name_] = new_cls
+
+        return new_cls
+
+    @classmethod
+    def filter_by_driver(cls, vendor, driver_external_id):
+        if vendor in cls._registry:
+            return cls._registry[vendor].objects.filter_by_driver_external_id(driver_external_id)
+        else:
+            raise NotImplementedError(f'{vendor} is not registered in {cls}')
+
+
+class UklonPaymentsOrder(models.Model, metaclass=GenericPaymentsOrder):
+
     report_from = models.DateTimeField()
     report_to = models.DateTimeField()
     report_file_name = models.CharField(max_length=255)
@@ -48,6 +94,12 @@ class UklonPaymentsOrder(models.Model):
     bonuses = models.DecimalField(decimal_places=2, max_digits=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    vendor_name = 'Uklon'
+
+    class Scopes:
+        def filter_by_driver_external_id(self, driver_external_id):
+            return self.filter(signal=driver_external_id)
 
     def driver_id(self):
         return self.signal
@@ -67,7 +119,7 @@ class UklonPaymentsOrder(models.Model):
     def kassa(self):
         return float(self.total_amount) * 0.81
 
-class NewUklonPaymentsOrder(models.Model):
+class NewUklonPaymentsOrder(models.Model, metaclass=GenericPaymentsOrder):
     report_from = models.DateTimeField()
     report_to = models.DateTimeField()
     report_file_name = models.CharField(max_length=255)
@@ -88,6 +140,12 @@ class NewUklonPaymentsOrder(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    vendor_name = 'NewUklon'
+
+    class Scopes:
+        def filter_by_driver_external_id(self, driver_external_id):
+            return self.filter(signal=driver_external_id)
+
     def driver_id(self):
         return self.signal
 
@@ -107,7 +165,7 @@ class NewUklonPaymentsOrder(models.Model):
         return float(self.total_amount) * 0.81
 
 
-class BoltPaymentsOrder(models.Model):
+class BoltPaymentsOrder(models.Model, metaclass=GenericPaymentsOrder):
     report_from = models.DateTimeField()
     report_to = models.DateTimeField()
     report_file_name = models.CharField(max_length=255)
@@ -129,6 +187,12 @@ class BoltPaymentsOrder(models.Model):
     weekly_balance = models.DecimalField(decimal_places=2, max_digits=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    vendor_name = 'Bolt'
+
+    class Scopes:
+        def filter_by_driver_external_id(self, driver_external_id):
+            return self.filter(mobile_number=driver_external_id)
 
     def driver_id(self):
         return self.mobile_number
@@ -154,7 +218,7 @@ class BoltPaymentsOrder(models.Model):
         return self.total_cach_less_drivers_amount() * (1 - rate) - self.total_drivers_amount(rate)
 
 
-class UberPaymentsOrder(models.Model):
+class UberPaymentsOrder(models.Model, metaclass=GenericPaymentsOrder):
     report_from = models.DateTimeField()
     report_to = models.DateTimeField()
     report_file_name = models.CharField(max_length=255)
@@ -169,6 +233,12 @@ class UberPaymentsOrder(models.Model):
     tips = models.DecimalField(decimal_places=2, max_digits=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    vendor_name = 'Uber'
+
+    class Scopes:
+        def filter_by_driver_external_id(self, driver_external_id):
+            return self.filter(driver_uuid=driver_external_id)
 
     def driver_id(self):
         return self.driver_uuid
@@ -277,23 +347,13 @@ class Driver(User):
             return 0
 
     def get_kassa(self, vendor: str, week_number: [str, None] = None) -> float:
-        vendor = vendor.capitalize()
         driver_external_id = self.get_driver_external_id(vendor)
-        fleets = {
-            'Uber': {'model': UberPaymentsOrder, 'condition': Q(driver_uuid=driver_external_id)},
-            'Bolt': {'model': BoltPaymentsOrder, 'condition': Q(mobile_number=driver_external_id)},
-            'Uklon': {'model': UklonPaymentsOrder, 'condition': Q(signal=driver_external_id)},
-        }
-        if fleets.get(vendor) is None:
-            return 0
         st = SeleniumTools(session='', week_number=week_number)
-        qset = fleets[vendor]['model'].objects.filter(fleets[vendor]['condition'],
-                                                      report_from__lte=st.end_of_week(),
-                                                      report_to__gte=st.start_of_week())
+        qset = GenericPaymentsOrder.filter_by_driver(vendor, driver_external_id)\
+            .filter(report_from__lte=st.end_of_week(), report_to__gte=st.start_of_week())
         return sum(map(lambda x: x.kassa(), qset))
 
     def get_dynamic_rate(self, vendor: str, week_number: [str, None] = None, kassa: float = None) -> float:
-        vendor = vendor.capitalize()
         if kassa is None:
             kassa = self.get_kassa(vendor, week_number)
         dct = DriverRateLevels.objects.filter(fleet__name=vendor, threshold_value__gte=kassa,
@@ -302,7 +362,6 @@ class Driver(User):
         return max(rate, 0)
 
     def get_salary(self, vendor: str, week_number: [str, None] = None) -> float:
-        vendor = vendor.capitalize()
         try:
             min_fee = float(Fleet.objects.get(name=vendor).min_fee)
         except Fleet.DoesNotExist:
