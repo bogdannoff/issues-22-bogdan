@@ -459,6 +459,7 @@ class Vehicle(models.Model):
     name = models.CharField(max_length=255)
     licence_plate = models.CharField(max_length=24)
     vin_code = models.CharField(max_length=17)
+    gps_imei = models.CharField(max_length=100, default='')
     created_at = models.DateTimeField(editable=False, auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -498,9 +499,8 @@ class RawGPS(models.Model):
     created_at = models.DateTimeField(editable=False, auto_now_add=True)
 
 
-class GPS(models.Model):
+class GPS(PolymorphicModel):
     date_time = models.DateTimeField(null=False)
-    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
     lat = models.DecimalField(decimal_places=4, max_digits=10, default=0)
     lat_zone = models.CharField(max_length=1)
     lon = models.DecimalField(decimal_places=4, max_digits=10, default=0)
@@ -508,8 +508,15 @@ class GPS(models.Model):
     speed = models.IntegerField(default=0)
     course = models.IntegerField(default=0)
     height = models.IntegerField(default=0)
-    raw_data = models.OneToOneField(RawGPS, on_delete=models.CASCADE)
     created_at = models.DateTimeField(editable=False, auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.lat}{self.lat_zone}:{self.lon}{self.lon_zone}'
+
+
+class VehicleGPS(GPS):
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    raw_data = models.OneToOneField(RawGPS, null=True, on_delete=models.CASCADE)
 
 
 class WeeklyReportFile(models.Model):
