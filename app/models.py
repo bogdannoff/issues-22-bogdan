@@ -499,6 +499,7 @@ class RawGPS(models.Model):
     created_at = models.DateTimeField(editable=False, auto_now_add=True)
 
 
+
 class GPS(PolymorphicModel):
     date_time = models.DateTimeField(null=False)
     lat = models.DecimalField(decimal_places=4, max_digits=10, default=0)
